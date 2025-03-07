@@ -1,1 +1,26 @@
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Model checkpoint files
+models/
+*.pth
+*.ckpt
+
+# Test output images
+outputs/
+test_subject_*.png
+
+# Dataset files
+t1_flair_asl_fdg_preprocessed/
+*.nii.gz
+
+# System files
 .DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+logs/
+tensorboard_logs/
