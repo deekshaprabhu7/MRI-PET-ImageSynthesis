@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 from dataset import train_loader, val_loader
@@ -20,8 +21,12 @@ criterion_L1 = nn.L1Loss()  # Structural similarity loss
 optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 
+# Learning rate scheduler
+scheduler_G = torch.optim.lr_scheduler.StepLR(optimizer_G, step_size=5, gamma=0.5)  # Decay every 5 epochs
+scheduler_D = torch.optim.lr_scheduler.StepLR(optimizer_D, step_size=5, gamma=0.5)
+
 # Training loop
-epochs = 10  # Adjust as needed
+epochs = 30  # Adjust as needed
 
 for epoch in range(epochs):
     generator.train()
@@ -38,16 +43,26 @@ for epoch in range(epochs):
         optimizer_D.zero_grad()
         real_validity = discriminator(torch.cat((mri, pet), 1))  # Real pairs
         fake_validity = discriminator(torch.cat((mri, fake_pet.detach()), 1))  # Fake pairs
-        d_loss = (criterion_GAN(real_validity, torch.ones_like(real_validity)) +
-                  criterion_GAN(fake_validity, torch.zeros_like(fake_validity))) / 2
+
+        # Label smoothing for stability
+        real_labels = torch.full_like(real_validity, 0.9, device=device)  
+        fake_labels = torch.zeros_like(fake_validity)
+
+        d_loss = (criterion_GAN(real_validity, real_labels) +
+                  criterion_GAN(fake_validity, fake_labels)) / 2
         d_loss.backward()
         optimizer_D.step()
 
         # Train Generator
         optimizer_G.zero_grad()
         fake_validity = discriminator(torch.cat((mri, fake_pet), 1))
-        g_loss = criterion_GAN(fake_validity, torch.ones_like(fake_validity)) + 0.5 * criterion_L1(fake_pet, pet)
+        
+        # Balanced loss (adversarial + structural)
+        g_loss = criterion_GAN(fake_validity, torch.ones_like(fake_validity)) + 100 * criterion_L1(fake_pet, pet)
         g_loss.backward()
+
+        # Gradient clipping for stability
+        torch.nn.utils.clip_grad_norm_(generator.parameters(), max_norm=1.0)
         optimizer_G.step()
 
         if i % 10 == 0:
@@ -66,10 +81,18 @@ for epoch in range(epochs):
     avg_val_loss = total_val_loss / len(val_loader)
     print(f"Epoch {epoch+1} Validation Loss: {avg_val_loss}")
 
-print("Training complete! 🚀")
+    # Step learning rate scheduler
+    scheduler_G.step()
+    scheduler_D.step()
 
-# Save the trained models
-torch.save(generator.state_dict(), "generator_3DUnet.pth")
-torch.save(discriminator.state_dict(), "discriminator_3DUnet.pth")
+print("Training complete!")
 
-print("Model saved successfully! 🚀")
+# Create a directory to store models
+model_dir = "models"
+os.makedirs(model_dir, exist_ok=True)  # Create the folder if it doesn’t exist
+
+# Save the trained models in the "models" folder
+torch.save(generator.state_dict(), os.path.join(model_dir, "generator_3DUnet.pth"))
+torch.save(discriminator.state_dict(), os.path.join(model_dir, "discriminator_3DUnet.pth"))
+
+print(f"Models saved successfully in '{model_dir}/'")

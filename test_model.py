@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from skimage.metrics import structural_similarity as ssim
 from skimage.metrics import peak_signal_noise_ratio as psnr
 from torch.utils.data import DataLoader
-from dataset import MRIPETDataset  # Import your dataset class
+from dataset import MRIPETDataset  # Import dataset
 from uNet import UNet3D  # Import trained generator model
 
 # Set device
@@ -15,11 +15,11 @@ print(f"Using device: {device}")
 
 # Load trained generator model
 generator = UNet3D().to(device)
-generator.load_state_dict(torch.load("generator_3DUnet.pth", map_location=device))
-generator.eval()  # Set to evaluation mode
+generator.load_state_dict(torch.load("models/generator_3DUnet.pth", map_location=device))
+generator.eval()
 
 # Define test dataset
-test_root = "t1_flair_asl_fdg_preprocessed"  # Change if needed
+test_root = "t1_flair_asl_fdg_preprocessed"
 test_dirs = [os.path.join(test_root, d) for d in os.listdir(test_root) if os.path.isdir(os.path.join(test_root, d))]
 test_dataset = MRIPETDataset(test_dirs)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
@@ -29,6 +29,9 @@ ssim_scores = []
 psnr_scores = []
 mse_scores = []
 
+# Create output directory
+os.makedirs("outputs", exist_ok=True)
+
 # Process test images
 for i, (mri_sample, real_pet) in enumerate(test_loader):
     mri_sample, real_pet = mri_sample.to(device), real_pet.to(device)
@@ -37,21 +40,26 @@ for i, (mri_sample, real_pet) in enumerate(test_loader):
     with torch.no_grad():
         fake_pet = generator(mri_sample)
 
-    # Convert to NumPy arrays for metric calculations
-    real_pet_np = real_pet.cpu().numpy().squeeze()  # (91, 109, 91)
-    fake_pet_np = fake_pet.cpu().numpy().squeeze()  # (91, 109, 91)
+    # Convert to NumPy arrays
+    real_pet_np = real_pet.cpu().numpy().squeeze().astype(np.float32)
+    fake_pet_np = fake_pet.cpu().numpy().squeeze().astype(np.float32)
 
-    # Compute MSE, PSNR, SSIM
+    # Compute metrics with dynamic data range
+    data_range = real_pet_np.max() - real_pet_np.min()
     mse_value = np.mean((real_pet_np - fake_pet_np) ** 2)
-    psnr_value = psnr(real_pet_np, fake_pet_np, data_range=1.0)
-    ssim_value = ssim(real_pet_np, fake_pet_np, data_range=1.0)
+    psnr_value = psnr(real_pet_np, fake_pet_np, data_range=data_range)
+
+    # Compute SSIM across slices and take mean
+    ssim_values_per_slice = [ssim(real_pet_np[:, :, i], fake_pet_np[:, :, i], data_range=data_range) 
+                             for i in range(real_pet_np.shape[-1])]
+    ssim_value = np.mean(ssim_values_per_slice)
 
     # Store metrics
     mse_scores.append(mse_value)
     psnr_scores.append(psnr_value)
     ssim_scores.append(ssim_value)
 
-    # Save or visualize every 10th test sample
+    # Save every 10th test sample
     if i % 10 == 0:
         slice_idx = real_pet_np.shape[-1] // 2  # Middle slice
 
@@ -63,7 +71,7 @@ for i, (mri_sample, real_pet) in enumerate(test_loader):
         axes[2].imshow(np.abs(real_pet_np[:, :, slice_idx] - fake_pet_np[:, :, slice_idx]), cmap="hot")
         axes[2].set_title("Difference (Error)")
 
-        plt.savefig(f"test_output_{i}.png")
+        plt.savefig(f"outputs/test_subject_{i}.png")
         plt.close()
 
 # Compute average scores
@@ -71,15 +79,15 @@ avg_mse = np.mean(mse_scores)
 avg_psnr = np.mean(psnr_scores)
 avg_ssim = np.mean(ssim_scores)
 
-print("\n🎯 **Final Metrics on Test Set** 🎯")
-print(f"📏 Mean Squared Error (MSE): {avg_mse:.6f}")
-print(f"🔊 Peak Signal-to-Noise Ratio (PSNR): {avg_psnr:.2f} dB")
-print(f"🧩 Structural Similarity Index (SSIM): {avg_ssim:.4f}")
+print("\n**Final Metrics on Test Set**")
+print(f"Mean Squared Error (MSE): {avg_mse:.6f}")
+print(f"Peak Signal-to-Noise Ratio (PSNR): {avg_psnr:.2f} dB")
+print(f"Structural Similarity Index (SSIM): {avg_ssim:.4f}")
 
 # Save metric results
-with open("test_results.txt", "w") as f:
+with open("outputs/test_results.txt", "w") as f:
     f.write(f"Mean Squared Error (MSE): {avg_mse:.6f}\n")
     f.write(f"Peak Signal-to-Noise Ratio (PSNR): {avg_psnr:.2f} dB\n")
     f.write(f"Structural Similarity Index (SSIM): {avg_ssim:.4f}\n")
 
-print("\n✅ **Testing Complete! Metrics saved to `test_results.txt`.** 🚀")
+print("\n**Testing Complete! Metrics saved to `test_results.txt`.** ")
