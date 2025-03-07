@@ -77,8 +77,6 @@ train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, pin_memory=
 val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, pin_memory=True)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, pin_memory=True)
 
-
-
 # Example: Fetch a sample
 mri_sample, pet_sample = next(iter(train_loader))
 print("MRI Sample Shape:", mri_sample.shape)  # (batch, 3, H, W, D)
