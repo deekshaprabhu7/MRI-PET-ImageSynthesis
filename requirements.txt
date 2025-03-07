@@ -1,14 +1,11 @@
 torch==2.6.0+cu121
-torchvision
-diffusers
-transformers
 accelerate
 matplotlib
 nibabel
 numpy
-pillow
 scipy
 monai
 opencv-python
 scikit-image
 scikit-learn
+piq
